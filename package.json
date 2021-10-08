@@ -1,0 +1,30 @@
+{
+  "name": "shop_back",
+  "version": "1.0.0",
+  "description": "shop_back",
+  "main": "index.js",
+  "scripts": {
+    "start": "ts-node-dev src/index.ts",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/pas8/shop_back.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/pas8/shop_back/issues"
+  },
+  "homepage": "https://github.com/pas8/shop_back#readme",
+  "devDependencies": {
+    "ts-node-dev": "^1.1.8",
+    "typescript": "^4.4.3"
+  },
+  "dependencies": {
+    "@types/node": "^16.10.3",
+    "mongodb": "^4.1.3",
+    "mongoose": "^6.0.9"
+  }
+}
