@@ -37,6 +37,8 @@ const server = http.createServer(async (req, res) => {
 });
 
 const PORT = process.env.PORT || 3030;
+console.log(process.env);
+
 server.listen(PORT, async () => {
   console.log('Server was started on ' + PORT + ' port');
 });
