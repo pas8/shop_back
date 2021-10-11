@@ -4,7 +4,7 @@
   "description": "shop_back",
   "main": "index.js",
   "scripts": {
-    "build": "tsc && npm run start",
+    "build": "tsc && npm run start && npm cache clean --force && npm update",
     "start": "node dist/index.js",
     "postinstall": "tsc",
     "watch-node": "nodemon dist/index.js",
