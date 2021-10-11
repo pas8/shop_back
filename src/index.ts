@@ -36,8 +36,7 @@ const server = http.createServer(async (req, res) => {
   res.end('PAGE NOT FOUND');
 });
 
-const PORT = process.env.PORT || '0.0.0.0';
-console.log(process);
+const PORT = process.env.PORT || 3030;
 
 server.listen(PORT, async () => {
   console.log('Server was started on ' + PORT + ' port');
