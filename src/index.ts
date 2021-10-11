@@ -11,6 +11,7 @@ const db = client.db('shop');
 const productsCollection = db.collection('products');
 
 const server = http.createServer(async (req, res) => {
+  console.log(';')
   if (!req) res.end(null);
 
   res.setHeader('Access-Control-Allow-Origin', 'http://localhost:8080');
