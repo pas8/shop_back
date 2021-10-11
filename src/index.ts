@@ -2,7 +2,6 @@ import http from 'http';
 import { MongoClient } from 'mongodb';
 import { use_res_end } from './utils/use_res_end.util';
 
-
 const URL = 'mongodb+srv://admin:admin@cluster0.lvg9p.mongodb.net/myFirstDatabase?retryWrites=true&w=majority';
 
 const client = new MongoClient(URL);
@@ -37,7 +36,7 @@ const server = http.createServer(async (req, res) => {
   res.end('PAGE NOT FOUND');
 });
 
-const PORT = 3030;
+const PORT = process.env.PORT || 3030;
 server.listen(PORT, async () => {
   console.log('Server was started on ' + PORT + ' port');
 });
