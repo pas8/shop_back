@@ -1,1 +1,1 @@
-$ echo "web: ts-node-dev src/index.ts" > Procfile
+web: ts-node-dev src/index.ts
