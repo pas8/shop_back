@@ -19,13 +19,11 @@
     "url": "https://github.com/pas8/shop_back/issues"
   },
   "homepage": "https://github.com/pas8/shop_back#readme",
-  "devDependencies": {
-    "ts-node-dev": "^1.1.8",
-    "typescript": "^4.4.3"
-  },
+  "devDependencies": {},
   "dependencies": {
-    "@types/node": "^16.10.3",
     "mongodb": "^4.1.3",
-    "mongoose": "^6.0.9"
+    "@types/node": "^16.10.3",
+    "typescript": "^4.4.3",
+    "ts-node-dev": "^1.1.8"
   }
 }
