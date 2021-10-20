@@ -83,9 +83,11 @@ const server = http.createServer(async (req, res) => {
 
   if (req.url === '/new_product' && req.method === 'POST') {
     return use_req_body(req, async (body) => {
+
       try {
-        await productsCollection.insertOne({ ...JSON.parse(body), id: get_random_id() });
-        return use_res_end(res, [status_codes.OK, { 'Content-Type': 'application/json' }], 'Order was added');
+        const id = get_random_id();
+        await productsCollection.insertOne({ ...JSON.parse(body), id });
+        return use_res_end(res, [status_codes.OK, { 'Content-Type': 'application/json' }], [id, 'product was added']);
       } catch (error) {
         return use_res_end(res, [status_codes.serverError, { 'Content-Type': 'application/json' }], error);
       }
@@ -107,7 +109,7 @@ const server = http.createServer(async (req, res) => {
       .toArray();
 
     const searchedCategories = await categoriesCollection
-      .find({ name: new RegExp(query) })
+      .find({ name: new RegExp(query), isParent: false })
       .limit(20)
       .toArray();
 
@@ -194,7 +196,6 @@ const server = http.createServer(async (req, res) => {
     });
   }
 
-
   if (req.url === '/new_category' && req.method === 'POST') {
     return use_req_body(req, async (body) => {
       try {
@@ -225,6 +226,20 @@ const server = http.createServer(async (req, res) => {
     });
   }
 
+  if (req.url?.startsWith('/parent_category') && req?.url?.includes('?id=')) {
+    const id = req.url.split('?id=')?.[1];
+
+    const children_categories = await categoriesCollection.find({ parentId: id }).toArray();
+
+    return use_res_end(res, [status_codes.OK, { 'Content-Type': 'application/json' }], children_categories);
+  }
+
+  if (req.url === '/parent_categories' && req.method === 'GET') {
+    const parent_Categories = await categoriesCollection.find({ isParent: true }).toArray();
+
+    return use_res_end(res, [status_codes.OK, { 'Content-Type': 'application/json' }], parent_Categories);
+  }
+
   if (req.url?.startsWith('/categories') && req?.url?.includes('?id=')) {
     const id = req.url.split('?id=')?.[1];
     if (req.method === 'GET') {
@@ -233,7 +248,6 @@ const server = http.createServer(async (req, res) => {
       })) as any;
       return use_res_end(res, [status_codes.OK, { 'Content-Type': 'application/json' }], caterogy);
     }
-
 
     if (req.method === 'POST') {
       return use_req_body(req, async (body) => {
@@ -252,15 +266,30 @@ const server = http.createServer(async (req, res) => {
       });
     }
 
-
-
     return;
   }
 
-  if (req.url === '/categories' && req.method === 'GET') {
-    const limitedCategories = await categoriesCollection.find({}).limit(20).toArray();
+  if (req.url?.startsWith('/products_of_') && req.method === 'GET' && req?.url?.includes('?category')) {
+    const id = req.url.split('?category=')?.[1];
 
-    return use_res_end(res, [status_codes.OK, { 'Content-Type': 'application/json' }], limitedCategories);
+    try {
+      const products_of_category_arr = await productsCollection.find({ categories: { $all: [id] } }).toArray();
+      return use_res_end(res, [status_codes.OK, { 'Content-Type': 'application/json' }], products_of_category_arr);
+    } catch (error) {
+      return use_res_end(res, [status_codes.serverError, { 'Content-Type': 'application/json' }], error);
+    }
+  }
+
+  if (req.url === '/all_parent_categories' && req.method === 'GET') {
+    const all_parent_categories_arr = await categoriesCollection.find({ isParent: true }).toArray();
+
+    return use_res_end(res, [status_codes.OK, { 'Content-Type': 'application/json' }], all_parent_categories_arr);
+  }
+
+  if (req.url === '/all_children_categories' && req.method === 'GET') {
+    const all_parent_categories_arr = await categoriesCollection.find({ isParent: false }).toArray();
+
+    return use_res_end(res, [status_codes.OK, { 'Content-Type': 'application/json' }], all_parent_categories_arr);
   }
 
   res.writeHead(status_codes.notFound, { 'Content-Type': 'application/json' });
