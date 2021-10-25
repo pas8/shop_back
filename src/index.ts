@@ -6,6 +6,7 @@ import { use_req_body } from './utils/use_req_body.util';
 import { set_up_headers } from './utils/set_up_headers.util';
 import status_codes from './status_codes';
 import { get_random_id } from './utils/get_random_id.util';
+import nodemailer from 'nodemailer';
 
 const URL = 'mongodb+srv://admin:admin@cluster0.lvg9p.mongodb.net/myFirstDatabase?retryWrites=true&w=majority';
 
@@ -16,34 +17,140 @@ const db = client.db('shop');
 const productsCollection = db.collection('products');
 const categoriesCollection = db.collection('categories');
 const ordersCollection = db.collection('orders');
+const users_collection = db.collection('users');
+const feedback_collection = db.collection('feedback');
 
 const JWT_SECRET = 'JWT_BY_PAS';
+const JWT_SECRET_USER = JWT_SECRET + '_';
+
+const send_auth_email = async (res: any, email: string) => {
+  const transporter = nodemailer.createTransport({
+    port: 465,
+    host: 'smtp.gmail.com',
+    auth: {
+      user: 'email8sender@gmail.com',
+      pass: '12hgfh12ech1c2fwreyryw2t1gdfrt12ytu12hgfd21tywe65systuqwow3u2p19u0078923178768123867809132hgty71287t',
+    },
+    secure: true,
+  });
+
+  await new Promise((resolve: any, reject: any) => {
+    transporter.verify((error: any, success: any) => {
+      if (error) {
+        console.log(error);
+        reject(error);
+      } else {
+        console.log('Server is ready to take our messages');
+        resolve(success);
+      }
+    });
+  });
+
+  const id = get_random_id();
+
+  const token = jwt.sign({ id }, JWT_SECRET_USER);
+  const mailData = {
+    to: email,
+    subject: `Please confirm email`,
+    text: `Post link http://localhost:8080/pages/auth_user.html?${token}`,
+  };
+
+  await new Promise((resolve: any, reject: any) => {
+    transporter.sendMail(mailData, (err: any, info: any) => {
+      if (err) {
+        console.error(err);
+        reject(err);
+      } else {
+        console.log(info);
+        resolve(info);
+      }
+    });
+  })
+    .then(async (el) => {
+      const is_user_was_incudes = await users_collection.findOne({ id });
+      if (!!is_user_was_incudes)
+        return use_res_end(
+          res,
+          [status_codes.serverError, { 'Content-Type': 'text/html' }],
+          'Check previuous emails with auth token'
+        );
+
+      await users_collection.insertOne({ email, id });
+      return use_res_end(
+        res,
+        [status_codes.OK, { 'Content-Type': 'text/html' }],
+        'Check your email (and spam propbably)'
+      );
+    })
+    .catch((error) => {
+      return use_res_end(res, [status_codes.serverError, { 'Content-Type': 'application/json' }], error);
+    });
+
+  // res.status(200).json({ status: 'OK' });
+};
 
 const server = http.createServer(async (req, res) => {
   if (!req) res.end(null);
 
   set_up_headers(res);
 
+  if (req.url?.startsWith('/auth_user?')) {
+    const token = req.url.split('?')?.[1];
+
+    if (req.method === 'GET') {
+      return use_req_body(req, () => {
+        jwt.verify(token, JWT_SECRET_USER, (err: any, decoded: any) => {
+          if (!!err) {
+            console.log(err);
+            return use_res_end(res, [status_codes.unauthorized, { 'Content-Type': 'application/json' }], err);
+          }
+
+          return use_res_end(res, [status_codes.OK, { 'Content-Type': 'application/json' }], decoded);
+        });
+      });
+    }
+  }
+
+  if (req.url?.startsWith('/add_product_review') && req?.url?.includes('?id=')) {
+    const product_id = req.url.split('?id=')?.[1];
+
+    if (req.method === 'POST') {
+      return use_req_body(req, async (body) => {
+        const { token, ...props } = JSON.parse(body);
+        jwt.verify(token, JWT_SECRET_USER, async (err: any, decoded: any) => {
+          if (!!err) {
+            return send_auth_email(res, props.email);
+          }
+          const { id: user_id } = decoded;
+          const id = get_random_id();
+
+          await feedback_collection.insertOne({ ...props, id, by: user_id, product_id });
+
+          return use_res_end(res, [status_codes.OK, { 'Content-Type': 'text/html' }], 'Your comment was added');
+        });
+      });
+    }
+  }
   if (req.url?.startsWith('/products') && req?.url?.includes('?id=')) {
     const id = req.url.split('?id=')?.[1];
 
     if (req.method === 'GET') {
+      const feedback = await feedback_collection.find({ product_id: id }).toArray();
       const product = (await productsCollection.findOne({
         id,
       })) as any;
-      return use_res_end(res, [200, { 'Content-Type': 'application/json' }], { ...product });
+      return use_res_end(res, [200, { 'Content-Type': 'application/json' }], { ...product, feedback });
     }
 
     if (req.method === 'POST') {
       return use_req_body(req, async (body) => {
-        console.log(body);
         try {
           await productsCollection.updateOne(
             {
               id,
             },
             { $set: JSON.parse(body) },
-            { upsert: true }
+            { upsert: false }
           );
           return use_res_end(res, [status_codes.OK, { 'Content-Type': 'application/json' }], 'All right');
         } catch (error) {
@@ -84,8 +191,9 @@ const server = http.createServer(async (req, res) => {
   if (req.url === '/new_product' && req.method === 'POST') {
     return use_req_body(req, async (body) => {
       try {
-        await productsCollection.insertOne({ ...JSON.parse(body), id: get_random_id() });
-        return use_res_end(res, [status_codes.OK, { 'Content-Type': 'application/json' }], 'Order was added');
+        const id = get_random_id();
+        await productsCollection.insertOne({ ...JSON.parse(body), id });
+        return use_res_end(res, [status_codes.OK, { 'Content-Type': 'application/json' }], [id, 'product was added']);
       } catch (error) {
         return use_res_end(res, [status_codes.serverError, { 'Content-Type': 'application/json' }], error);
       }
@@ -107,7 +215,7 @@ const server = http.createServer(async (req, res) => {
       .toArray();
 
     const searchedCategories = await categoriesCollection
-      .find({ name: new RegExp(query) })
+      .find({ name: new RegExp(query), isParent: false })
       .limit(20)
       .toArray();
 
@@ -153,6 +261,7 @@ const server = http.createServer(async (req, res) => {
     } catch (error) {
       return use_res_end(res, [status_codes.serverError, { 'Content-Type': 'application/json' }], error);
     }
+    feedback_collection;
   }
 
   if (req.url?.startsWith('/orders') && req?.url?.includes('?id=')) {
@@ -194,7 +303,6 @@ const server = http.createServer(async (req, res) => {
     });
   }
 
-
   if (req.url === '/new_category' && req.method === 'POST') {
     return use_req_body(req, async (body) => {
       try {
@@ -225,6 +333,20 @@ const server = http.createServer(async (req, res) => {
     });
   }
 
+  if (req.url?.startsWith('/parent_category') && req?.url?.includes('?id=')) {
+    const id = req.url.split('?id=')?.[1];
+
+    const children_categories = await categoriesCollection.find({ parentId: id }).toArray();
+
+    return use_res_end(res, [status_codes.OK, { 'Content-Type': 'application/json' }], children_categories);
+  }
+
+  if (req.url === '/parent_categories' && req.method === 'GET') {
+    const parent_Categories = await categoriesCollection.find({ isParent: true }).toArray();
+
+    return use_res_end(res, [status_codes.OK, { 'Content-Type': 'application/json' }], parent_Categories);
+  }
+
   if (req.url?.startsWith('/categories') && req?.url?.includes('?id=')) {
     const id = req.url.split('?id=')?.[1];
     if (req.method === 'GET') {
@@ -233,7 +355,6 @@ const server = http.createServer(async (req, res) => {
       })) as any;
       return use_res_end(res, [status_codes.OK, { 'Content-Type': 'application/json' }], caterogy);
     }
-
 
     if (req.method === 'POST') {
       return use_req_body(req, async (body) => {
@@ -252,15 +373,30 @@ const server = http.createServer(async (req, res) => {
       });
     }
 
-
-
     return;
   }
 
-  if (req.url === '/categories' && req.method === 'GET') {
-    const limitedCategories = await categoriesCollection.find({}).limit(20).toArray();
+  if (req.url?.startsWith('/products_of_') && req.method === 'GET' && req?.url?.includes('?category')) {
+    const id = req.url.split('?category=')?.[1];
 
-    return use_res_end(res, [status_codes.OK, { 'Content-Type': 'application/json' }], limitedCategories);
+    try {
+      const products_of_category_arr = await productsCollection.find({ categories: { $all: [id] } }).toArray();
+      return use_res_end(res, [status_codes.OK, { 'Content-Type': 'application/json' }], products_of_category_arr);
+    } catch (error) {
+      return use_res_end(res, [status_codes.serverError, { 'Content-Type': 'application/json' }], error);
+    }
+  }
+
+  if (req.url === '/all_parent_categories' && req.method === 'GET') {
+    const all_parent_categories_arr = await categoriesCollection.find({ isParent: true }).toArray();
+
+    return use_res_end(res, [status_codes.OK, { 'Content-Type': 'application/json' }], all_parent_categories_arr);
+  }
+
+  if (req.url === '/all_children_categories' && req.method === 'GET') {
+    const all_parent_categories_arr = await categoriesCollection.find({ isParent: false }).toArray();
+
+    return use_res_end(res, [status_codes.OK, { 'Content-Type': 'application/json' }], all_parent_categories_arr);
   }
 
   res.writeHead(status_codes.notFound, { 'Content-Type': 'application/json' });
