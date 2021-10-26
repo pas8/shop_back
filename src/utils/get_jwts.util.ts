@@ -1,0 +1,1 @@
+export const get_jwts = () =>['JWT_BY_PAS_','JWT_BY_PAS']
