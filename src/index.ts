@@ -6,88 +6,15 @@ import { use_req_body } from './utils/use_req_body.util';
 import { set_up_headers } from './utils/set_up_headers.util';
 import status_codes from './status_codes';
 import { get_random_id } from './utils/get_random_id.util';
-import nodemailer from 'nodemailer';
+import { get_collections } from './utils/get_collections.util';
+import { use_send_mail } from './utils/use_send_mail.util';
+import { get_jwts } from './utils/get_jwts.util';
+import { get_id } from './utils/get_id.util';
 
-const URL = 'mongodb+srv://admin:admin@cluster0.lvg9p.mongodb.net/myFirstDatabase?retryWrites=true&w=majority';
+const [productsCollection, categoriesCollection, ordersCollection, users_collection, feedback_collection] =
+  get_collections();
 
-const client = new MongoClient(URL);
-client.connect();
-
-const db = client.db('shop');
-const productsCollection = db.collection('products');
-const categoriesCollection = db.collection('categories');
-const ordersCollection = db.collection('orders');
-const users_collection = db.collection('users');
-const feedback_collection = db.collection('feedback');
-
-const JWT_SECRET = 'JWT_BY_PAS';
-const JWT_SECRET_USER = JWT_SECRET + '_';
-
-const send_auth_email = async (res: any, { name, email }: { [key: string]: string }) => {
-  const transporter = nodemailer.createTransport({
-    port: 465,
-    host: 'smtp.gmail.com',
-    auth: {
-      user: 'email8sender@gmail.com',
-      pass: '12hgfh12ech1c2fwreyryw2t1gdfrt12ytu12hgfd21tywe65systuqwow3u2p19u0078923178768123867809132hgty71287t',
-    },
-    secure: true,
-  });
-
-  await new Promise((resolve: any, reject: any) => {
-    transporter.verify((error: any, success: any) => {
-      if (error) {
-        console.log(error);
-        reject(error);
-      } else {
-        console.log('Server is ready to take our messages');
-        resolve(success);
-      }
-    });
-  });
-
-  const id = get_random_id();
-
-  const token = jwt.sign({ id }, JWT_SECRET_USER);
-  const mailData = {
-    to: email,
-    subject: `${name} please confirm email`,
-    text: `Post link http://localhost:8080/pages/auth_user.html?${token}`,
-  };
-
-  await new Promise((resolve: any, reject: any) => {
-    transporter.sendMail(mailData, (err: any, info: any) => {
-      if (err) {
-        console.error(err);
-        reject(err);
-      } else {
-        console.log(info);
-        resolve(info);
-      }
-    });
-  })
-    .then(async (el) => {
-      const is_user_was_incudes = await users_collection.findOne({ id });
-      if (!!is_user_was_incudes)
-        return use_res_end(
-          res,
-          [status_codes.serverError, { 'Content-Type': 'text/html' }],
-          'Check previuous emails with auth token'
-        );
-
-      await users_collection.insertOne({ email, id, name });
-      return use_res_end(
-        res,
-        [status_codes.OK, { 'Content-Type': 'text/html' }],
-        'Check your email (and spam propbably)'
-      );
-    })
-    .catch((error) => {
-      return use_res_end(res, [status_codes.serverError, { 'Content-Type': 'application/json' }], error);
-    });
-
-  // res.status(200).json({ status: 'OK' });
-};
+const [JWT_SECRET_USER, JWT_SECRET] = get_jwts();
 
 const server = http.createServer(async (req, res) => {
   if (!req) res.end(null);
@@ -111,14 +38,14 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (req.url?.startsWith('/add_product_review') && req?.url?.includes('?id=')) {
-    const product_id = req.url.split('?id=')?.[1];
+    const product_id = get_id(req);
 
     if (req.method === 'POST') {
       return use_req_body(req, async (body) => {
         const { token, email, name, ...props } = JSON.parse(body);
         jwt.verify(token, JWT_SECRET_USER, async (err: any, decoded: any) => {
           if (!!err) {
-            return send_auth_email(res, { email, name });
+            return use_send_mail(res, { email, name },users_collection);
           }
           const { id: user_id } = decoded;
           const id = get_random_id();
