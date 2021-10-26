@@ -51,13 +51,8 @@ export const use_send_mail = async (res: any, { name, email }: { [key: string]: 
     });
   })
     .then(async (el) => {
-      const is_user_was_incudes = await users_collection.findOne({ id });
-      if (!!is_user_was_incudes)
-        return use_res_end(
-          res,
-          [status_codes.serverError, { 'Content-Type': 'text/html' }],
-          'Check previuous emails with auth token'
-        );
+      const is_user_was_incudes = await users_collection.findOne({ email });
+      if (!!is_user_was_incudes) return use_res_end(res, [status_codes.conflict, { 'Content-Type': 'text/html' }], '');
 
       await users_collection.insertOne({ email, id, name });
       return use_res_end(

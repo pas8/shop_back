@@ -1,6 +1,5 @@
 import jwt from 'jsonwebtoken';
 import http from 'http';
-import { MongoClient } from 'mongodb';
 import { use_res_end } from './utils/use_res_end.util';
 import { use_req_body } from './utils/use_req_body.util';
 import { set_up_headers } from './utils/set_up_headers.util';
@@ -10,6 +9,7 @@ import { get_collections } from './utils/get_collections.util';
 import { use_send_mail } from './utils/use_send_mail.util';
 import { get_jwts } from './utils/get_jwts.util';
 import { get_id } from './utils/get_id.util';
+import { use_jwt_verify } from './utils/use_jwt_verify.util';
 
 const [productsCollection, categoriesCollection, ordersCollection, users_collection, feedback_collection] =
   get_collections();
@@ -21,19 +21,23 @@ const server = http.createServer(async (req, res) => {
 
   set_up_headers(res);
 
+  if (req.url?.startsWith('/send_auth_email')) {
+    if (req.method === 'POST') {
+      return use_req_body(req, async (body) => {
+        const { email, name } = JSON.parse(body);
+        return use_send_mail(res, { email, name }, users_collection);
+      });
+    }
+  }
+
   if (req.url?.startsWith('/auth_user?')) {
     const token = req.url.split('?')?.[1];
 
     if (req.method === 'GET') {
-      return use_req_body(req, () => {
-        jwt.verify(token, JWT_SECRET_USER, (err: any, decoded: any) => {
-          if (!!err) {
-            return use_res_end(res, [status_codes.unauthorized, { 'Content-Type': 'application/json' }], err);
-          }
+      const [decoded, fn_err] = use_jwt_verify(JWT_SECRET_USER, token, res);
 
-          return use_res_end(res, [status_codes.OK, { 'Content-Type': 'application/json' }], decoded);
-        });
-      });
+      if (!decoded) return fn_err && fn_err();
+      return use_res_end(res, [status_codes.OK, { 'Content-Type': 'application/json' }], decoded);
     }
   }
 
@@ -45,7 +49,7 @@ const server = http.createServer(async (req, res) => {
         const { token, email, name, ...props } = JSON.parse(body);
         jwt.verify(token, JWT_SECRET_USER, async (err: any, decoded: any) => {
           if (!!err) {
-            return use_send_mail(res, { email, name },users_collection);
+            return use_send_mail(res, { email, name }, users_collection);
           }
           const { id: user_id } = decoded;
           const id = get_random_id();
@@ -57,8 +61,14 @@ const server = http.createServer(async (req, res) => {
       });
     }
   }
-  if (req.url?.startsWith('/user') && req?.url?.includes('?id=')) {
-    const id = req.url.split('?id=')?.[1];
+  if (req.url?.startsWith('/user') && req?.url?.includes('?')) {
+    const token = req.url.split('?')?.[1];
+
+    const [decoded, fn_err] = use_jwt_verify(JWT_SECRET_USER, token, res);
+
+    const id = decoded?.id;
+
+    if (!id) return fn_err && fn_err();
 
     try {
       const user = await users_collection.findOne({
@@ -66,7 +76,9 @@ const server = http.createServer(async (req, res) => {
       });
       if (!user) return use_res_end(res, [status_codes.notFound, { 'Content-Type': 'application/json' }], '');
 
-      return use_res_end(res, [status_codes.OK, { 'Content-Type': 'application/json' }], user);
+      const orders = (await ordersCollection.find({ by: id }).toArray()) || [];
+
+      return use_res_end(res, [status_codes.OK, { 'Content-Type': 'application/json' }], { ...user, orders });
     } catch (error) {
       return use_res_end(res, [status_codes.serverError, { 'Content-Type': 'application/json' }], error);
     }
@@ -83,7 +95,8 @@ const server = http.createServer(async (req, res) => {
       })) as any;
 
       feedback.forEach(async ({ by, ...props }) => {
-        const { name } = (await users_collection.findOne({ id: by })) as any;
+        const user = (await users_collection.findOne({ id: by })) as any;
+        const name = user?.name || 'unknown';
         return { ...props, name };
       });
       return use_res_end(res, [200, { 'Content-Type': 'application/json' }], { ...product, feedback });
@@ -241,7 +254,25 @@ const server = http.createServer(async (req, res) => {
   if (req.url === '/new_order' && req.method === 'POST') {
     return use_req_body(req, async (body) => {
       try {
-        await ordersCollection.insertOne({ ...JSON.parse(body), id: get_random_id() });
+        const { token, ...props } = JSON.parse(body);
+        const [decoded] = use_jwt_verify(JWT_SECRET_USER, token, res);
+        const id = decoded.id;
+
+        if (!!id) {
+          try {
+            await users_collection.updateOne(
+              {
+                id,
+              },
+              { $set: props.contactData },
+              { upsert: false }
+            );
+          } catch (error) {
+            return use_res_end(res, [status_codes.serverError, { 'Content-Type': 'application/json' }], error);
+          }
+        }
+
+        await ordersCollection.insertOne({ ...props, id: get_random_id(), status: 'open', by: id || 'unknown' });
         return use_res_end(res, [status_codes.OK, { 'Content-Type': 'application/json' }], 'Order was added');
       } catch (error) {
         return use_res_end(res, [status_codes.serverError, { 'Content-Type': 'application/json' }], error);
