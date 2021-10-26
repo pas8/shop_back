@@ -23,7 +23,7 @@ const feedback_collection = db.collection('feedback');
 const JWT_SECRET = 'JWT_BY_PAS';
 const JWT_SECRET_USER = JWT_SECRET + '_';
 
-const send_auth_email = async (res: any, email: string) => {
+const send_auth_email = async (res: any, { name, email }: { [key: string]: string }) => {
   const transporter = nodemailer.createTransport({
     port: 465,
     host: 'smtp.gmail.com',
@@ -51,7 +51,7 @@ const send_auth_email = async (res: any, email: string) => {
   const token = jwt.sign({ id }, JWT_SECRET_USER);
   const mailData = {
     to: email,
-    subject: `Please confirm email`,
+    subject: `${name} please confirm email`,
     text: `Post link http://localhost:8080/pages/auth_user.html?${token}`,
   };
 
@@ -75,7 +75,7 @@ const send_auth_email = async (res: any, email: string) => {
           'Check previuous emails with auth token'
         );
 
-      await users_collection.insertOne({ email, id });
+      await users_collection.insertOne({ email, id, name });
       return use_res_end(
         res,
         [status_codes.OK, { 'Content-Type': 'text/html' }],
@@ -101,7 +101,6 @@ const server = http.createServer(async (req, res) => {
       return use_req_body(req, () => {
         jwt.verify(token, JWT_SECRET_USER, (err: any, decoded: any) => {
           if (!!err) {
-            console.log(err);
             return use_res_end(res, [status_codes.unauthorized, { 'Content-Type': 'application/json' }], err);
           }
 
@@ -116,10 +115,10 @@ const server = http.createServer(async (req, res) => {
 
     if (req.method === 'POST') {
       return use_req_body(req, async (body) => {
-        const { token, ...props } = JSON.parse(body);
+        const { token, email, name, ...props } = JSON.parse(body);
         jwt.verify(token, JWT_SECRET_USER, async (err: any, decoded: any) => {
           if (!!err) {
-            return send_auth_email(res, props.email);
+            return send_auth_email(res, { email, name });
           }
           const { id: user_id } = decoded;
           const id = get_random_id();
@@ -131,14 +130,35 @@ const server = http.createServer(async (req, res) => {
       });
     }
   }
+  if (req.url?.startsWith('/user') && req?.url?.includes('?id=')) {
+    const id = req.url.split('?id=')?.[1];
+
+    try {
+      const user = await users_collection.findOne({
+        id,
+      });
+      if (!user) return use_res_end(res, [status_codes.notFound, { 'Content-Type': 'application/json' }], '');
+
+      return use_res_end(res, [status_codes.OK, { 'Content-Type': 'application/json' }], user);
+    } catch (error) {
+      return use_res_end(res, [status_codes.serverError, { 'Content-Type': 'application/json' }], error);
+    }
+  }
+
   if (req.url?.startsWith('/products') && req?.url?.includes('?id=')) {
     const id = req.url.split('?id=')?.[1];
 
     if (req.method === 'GET') {
       const feedback = await feedback_collection.find({ product_id: id }).toArray();
+
       const product = (await productsCollection.findOne({
         id,
       })) as any;
+
+      feedback.forEach(async ({ by, ...props }) => {
+        const { name } = (await users_collection.findOne({ id: by })) as any;
+        return { ...props, name };
+      });
       return use_res_end(res, [200, { 'Content-Type': 'application/json' }], { ...product, feedback });
     }
 
@@ -261,7 +281,6 @@ const server = http.createServer(async (req, res) => {
     } catch (error) {
       return use_res_end(res, [status_codes.serverError, { 'Content-Type': 'application/json' }], error);
     }
-    feedback_collection;
   }
 
   if (req.url?.startsWith('/orders') && req?.url?.includes('?id=')) {
