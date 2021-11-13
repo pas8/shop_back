@@ -61,11 +61,25 @@ const server = http.createServer(async (req, res) => {
       });
     }
   }
+  if (req.url?.startsWith('/global_user_info') && req?.url?.includes('?')) {
+    const id = req.url.split('?')?.[1];
+
+    try {
+      const user = await users_collection.findOne({
+        id,
+      });
+      if (!user) return use_res_end(res, [status_codes.notFound, { 'Content-Type': 'application/json' }], '');
+
+      return use_res_end(res, [status_codes.OK, { 'Content-Type': 'application/json' }], { id, name: user.name });
+    } catch (error) {
+      return use_res_end(res, [status_codes.serverError, { 'Content-Type': 'application/json' }], error);
+    }
+  }
+
   if (req.url?.startsWith('/user') && req?.url?.includes('?')) {
     const token = req.url.split('?')?.[1];
 
     const [decoded, fn_err] = use_jwt_verify(JWT_SECRET_USER, token, res);
-
     const id = decoded?.id;
 
     if (!id) return fn_err && fn_err();
@@ -271,9 +285,9 @@ const server = http.createServer(async (req, res) => {
             return use_res_end(res, [status_codes.serverError, { 'Content-Type': 'application/json' }], error);
           }
         }
-
-        await ordersCollection.insertOne({ ...props, id: get_random_id(), status: 'open', by: id || 'unknown' });
-        return use_res_end(res, [status_codes.OK, { 'Content-Type': 'application/json' }], 'Order was added');
+        const order_id = get_random_id();
+        await ordersCollection.insertOne({ ...props, id: order_id, status: 'open', by: id || 'unknown' });
+        return use_res_end(res, [status_codes.OK, { 'Content-Type': 'application/json' }], order_id);
       } catch (error) {
         return use_res_end(res, [status_codes.serverError, { 'Content-Type': 'application/json' }], error);
       }
